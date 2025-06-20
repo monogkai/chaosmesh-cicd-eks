@@ -20,8 +20,21 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION }}
       
-      - name: Build and push images to ECR
+      - name: Build and push images to AWS ECR
         run: |
           aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin 971632253057.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
           docker build -t 971632253057.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/app:latest ./app
           docker push 971632253057.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/app:latest
+
+      - name: Deploy to EKS
+        run: |
+          aws eks update-kubeconfig --name ci-cd-cluster --region ${{ vars.AWS_REGION }}
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+      
+      - name: Verify status
+        run: |
+          kubectl rollout status deployment/devops-app --timeout=180s
+          kubectl get svc
+          kubectl get endpoints
+          kubectl get pods
