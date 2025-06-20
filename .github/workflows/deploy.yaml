@@ -22,5 +22,6 @@ jobs:
       
       - name: Build and push images to ECR
         run: |
-          aws ecr get-login-password --region ${{ vars.AWS_REGION }}
-          aws docker login --username AWS --password-stdin  971632253057.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+          aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin 971632253057.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+          docker build -t 971632253057.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/app:latest ./app
+          docker push 971632253057.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/app:latest
