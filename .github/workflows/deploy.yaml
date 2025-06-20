@@ -1,10 +1,10 @@
-name: CI/CD pipeline deploy
+name: CI/CD pipeline
 
 on:
   push: 
     branches: [main]
   pull_request:
-    types: [opened, synchronized, reopened]
+    types: [opened, synchronize, reopened]
 
 jobs:
   build-deploy:
@@ -12,4 +12,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
       
+      - name: Build and push images to ECR
+        run: |
+          aws ecr get-login-password --region ${{ vars.AWS_REGION }}
+          aws docker login --username AWS --password-stdin  971632253057.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
