@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devops-project
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: devops-project
+  template:
+    metadata:
+      labels:
+        app: devops-project
+    spec:
+      containers:
+        - name: devops-project
+          image: 971632253057.dkr.ecr.us-east-1.amazonaws.com/app:latest
+          ports:
+            - containerPort: 3000
