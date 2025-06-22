@@ -1,0 +1,39 @@
+name: Clean up AWS
+description: Deletes previous AWS resources.
+
+inputs:
+  AWS_ACCESS_KEY_ID:
+    required: true
+  AWS_SECRET_ACCESS_KEY:
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ inputs.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ inputs.AWS_SECRET_ACCESS_KEY }}
+        aws-region: eu-north-1
+
+    - name: Delete ECR repository
+      shell: bash
+      run: |
+        echo "Deleting images in ECR repository: app"
+        images=$(aws ecr list-images --repository-name app --region eu-north-1 --query 'imageIds[*]' --output json)
+        if [[ "$images" != "[]" ]]; then
+          echo "$images" > images.json
+          aws ecr batch-delete-image --repository-name app --region eu-north-1 --image-ids file://images.json
+        else
+          echo "No images to delete"
+        fi
+
+        echo "Deleting ECR repository: app"
+        aws ecr delete-repository --repository-name app --region eu-north-1 || echo "ECR repo 'app' not found or already deleted"
+
+    - name: Delete EKS cluster
+      shell: bash
+      run: |
+        echo "Deleting EKS cluster: ci-cd-cluster"
+        aws eks delete-cluster --name ci-cd-cluster --region eu-north-1 || echo "EKS cluster 'ci-cd-cluster' not found or already deleted"
