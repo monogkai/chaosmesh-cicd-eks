@@ -17,7 +17,7 @@ runs:
         aws-secret-access-key: ${{ inputs.AWS_SECRET_ACCESS_KEY }}
         aws-region: eu-north-1
 
-    - name: Delete ECR repository
+    - name: Delete images and ECR repository
       shell: bash
       run: |
         echo "Deleting images in ECR repository: app"
@@ -30,10 +30,75 @@ runs:
         fi
 
         echo "Deleting ECR repository: app"
-        aws ecr delete-repository --repository-name app --region eu-north-1 || echo "ECR repo 'app' not found or already deleted"
+        aws ecr delete-repository --repository-name app --region eu-north-1 --force || echo "ECR repo 'app' not found or already deleted"
 
     - name: Delete EKS cluster
       shell: bash
       run: |
         echo "Deleting EKS cluster: ci-cd-cluster"
         aws eks delete-cluster --name ci-cd-cluster --region eu-north-1 || echo "EKS cluster 'ci-cd-cluster' not found or already deleted"
+
+    - name: Delete VPC and related resources
+      shell: bash
+      run: |
+        echo "Searching for VPC with tag Name=eks_vpc"
+        VPC_ID=$(aws ec2 describe-vpcs \
+          --filters "Name=tag:Name,Values=eks_vpc" \
+          --region eu-north-1 \
+          --query "Vpcs[0].VpcId" \
+          --output text 2>/dev/null)
+
+        if [[ "$VPC_ID" == "None" || -z "$VPC_ID" ]]; then
+          echo "VPC 'eks_vpc' not found or already deleted"
+        else
+          echo "Found VPC: $VPC_ID"
+
+          # Delete subnets
+          SUBNET_IDS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --region eu-north-1 --query "Subnets[*].SubnetId" --output text)
+          for subnet in $SUBNET_IDS; do
+            echo "Deleting subnet: $subnet"
+            aws ec2 delete-subnet --subnet-id "$subnet" --region eu-north-1 || true
+          done
+
+          # Delete internet gateways
+          IGW_IDS=$(aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$VPC_ID" --region eu-north-1 --query "InternetGateways[*].InternetGatewayId" --output text)
+          for igw in $IGW_IDS; do
+            echo "Detaching and deleting internet gateway: $igw"
+            aws ec2 detach-internet-gateway --internet-gateway-id "$igw" --vpc-id "$VPC_ID" --region eu-north-1 || true
+            aws ec2 delete-internet-gateway --internet-gateway-id "$igw" --region eu-north-1 || true
+          done
+
+          # Delete route tables (except main)
+          ROUTE_TABLES=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" --region eu-north-1 --query "RouteTables[*].RouteTableId" --output text)
+          for rtb in $ROUTE_TABLES; do
+            IS_MAIN=$(aws ec2 describe-route-tables --route-table-ids "$rtb" --region eu-north-1 --query "RouteTables[0].Associations[0].Main" --output text)
+            if [[ "$IS_MAIN" != "True" ]]; then
+              echo "Deleting route table: $rtb"
+              aws ec2 delete-route-table --route-table-id "$rtb" --region eu-north-1 || true
+            fi
+          done
+
+          # Finally delete the VPC
+          echo "Deleting VPC: $VPC_ID"
+          aws ec2 delete-vpc --vpc-id "$VPC_ID" --region eu-north-1 || true
+        fi
+
+    - name: Delete IAM roles
+      shell: bash
+      run: |
+        for role in eks-cluster-role eks-node-role; do
+          echo "Processing IAM role: $role"
+          ROLE_EXISTS=$(aws iam get-role --role-name "$role" 2>/dev/null || true)
+          if [[ -n "$ROLE_EXISTS" ]]; then
+            echo "Deleting policies from role: $role"
+            POLICY_ARNS=$(aws iam list-attached-role-policies --role-name "$role" --query "AttachedPolicies[*].PolicyArn" --output text)
+            for policy in $POLICY_ARNS; do
+              aws iam detach-role-policy --role-name "$role" --policy-arn "$policy" || true
+            done
+
+            echo "Deleting IAM role: $role"
+            aws iam delete-role --role-name "$role" || true
+          else
+            echo "IAM role '$role' not found or already deleted"
+          fi
+        done
