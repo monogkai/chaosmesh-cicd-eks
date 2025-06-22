@@ -1,0 +1,10 @@
+name: Delete previous AWS resources
+description: Deletes ECR and EKS resources
+runs: 
+  using: "composite"
+  steps:   
+    - name: Delete ECR repository
+      shell: bash
+      run: |
+        echo "Deleting ECR repository: app"
+        aws ecr delete-repository --repository-name "app" --force --region "eu-north-1" || echo "ECR repo 'app' not found or already deleted"
