@@ -17,6 +17,11 @@ runs:
         aws-secret-access-key: ${{ inputs.AWS_SECRET_ACCESS_KEY }}
         aws-region: eu-north-1
 
+    - name: Update kubeconfig for EKS cluster
+      shell: bash
+      run: |
+        aws eks update-kubeconfig --region eu-north-1 --name ci-cd-cluster
+
     - name: Show service and pod info
       shell: bash
       run: |

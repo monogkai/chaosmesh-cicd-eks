@@ -20,23 +20,68 @@ runs:
     - name: Delete images and ECR repository
       shell: bash
       run: |
-        echo "Deleting images in ECR repository: app"
-        images=$(aws ecr list-images --repository-name app --region eu-north-1 --query 'imageIds[*]' --output json)
-        if [[ "$images" != "[]" ]]; then
-          echo "$images" > images.json
-          aws ecr batch-delete-image --repository-name app --region eu-north-1 --image-ids file://images.json
+        echo "Checking if ECR repository 'app' exists..."
+        REPO_EXISTS=$(aws ecr describe-repositories --repository-names app --region eu-north-1 --query "repositories[0].repositoryName" --output text 2>/dev/null || echo "")
+
+        if [[ -z "$REPO_EXISTS" ]]; then
+          echo "ECR repository 'app' does not exist, skipping image and repo deletion."
         else
-          echo "No images to delete"
+          echo "Deleting images in ECR repository: app"
+          images=$(aws ecr list-images --repository-name app --region eu-north-1 --query 'imageIds[*]' --output json)
+          if [[ "$images" != "[]" ]]; then
+            echo "$images" > images.json
+            aws ecr batch-delete-image --repository-name app --region eu-north-1 --image-ids file://images.json
+          else
+            echo "No images to delete"
+          fi
+
+          echo "Deleting ECR repository: app"
+          aws ecr delete-repository --repository-name app --region eu-north-1 --force || echo "ECR repo 'app' not found or already deleted"
         fi
 
-        echo "Deleting ECR repository: app"
-        aws ecr delete-repository --repository-name app --region eu-north-1 --force || echo "ECR repo 'app' not found or already deleted"
+    - name: Delete EKS node groups
+      shell: bash
+      run: |
+        CLUSTER_NAME="ci-cd-cluster"
+        REGION="eu-north-1"
+
+        echo "Checking if EKS cluster $CLUSTER_NAME exists..."
+        CLUSTER_EXISTS=$(aws eks describe-cluster --name $CLUSTER_NAME --region $REGION --query "cluster.name" --output text 2>/dev/null || echo "")
+
+        if [[ -z "$CLUSTER_EXISTS" ]]; then
+          echo "EKS cluster '$CLUSTER_NAME' does not exist, skipping nodegroup deletion."
+        else
+          echo "Deleting node groups in EKS cluster: $CLUSTER_NAME"
+          NODEGROUPS=$(aws eks list-nodegroups --cluster-name $CLUSTER_NAME --region $REGION --query "nodegroups" --output text)
+          for ng in $NODEGROUPS; do
+            echo "Deleting node group: $ng"
+            aws eks delete-nodegroup --cluster-name $CLUSTER_NAME --nodegroup-name "$ng" --region $REGION || true
+          done
+
+          echo "Waiting for node groups to be deleted..."
+          for ng in $NODEGROUPS; do
+            aws eks wait nodegroup-deleted --cluster-name $CLUSTER_NAME --nodegroup-name "$ng" --region $REGION || true
+          done
+        fi
 
     - name: Delete EKS cluster
       shell: bash
       run: |
-        echo "Deleting EKS cluster: ci-cd-cluster"
-        aws eks delete-cluster --name ci-cd-cluster --region eu-north-1 || echo "EKS cluster 'ci-cd-cluster' not found or already deleted"
+        CLUSTER_NAME="ci-cd-cluster"
+        REGION="eu-north-1"
+
+        echo "Checking if EKS cluster $CLUSTER_NAME exists..."
+        CLUSTER_EXISTS=$(aws eks list-clusters --region $REGION --query "clusters" --output text | grep -w "$CLUSTER_NAME" || true)
+
+        if [[ -z "$CLUSTER_EXISTS" ]]; then
+          echo "EKS cluster '$CLUSTER_NAME' not found or already deleted. Skipping deletion."
+        else
+          echo "Deleting EKS cluster: $CLUSTER_NAME"
+          aws eks delete-cluster --name $CLUSTER_NAME --region $REGION || echo "EKS cluster deletion command failed"
+
+          echo "Waiting for EKS cluster to be deleted..."
+          aws eks wait cluster-deleted --name $CLUSTER_NAME --region $REGION || echo "EKS cluster deletion wait failed or cluster not found"
+        fi
 
     - name: Delete VPC and related resources
       shell: bash
@@ -78,7 +123,7 @@ runs:
             fi
           done
 
-          # Finally delete the VPC
+          # Delete the VPC
           echo "Deleting VPC: $VPC_ID"
           aws ec2 delete-vpc --vpc-id "$VPC_ID" --region eu-north-1 || true
         fi
@@ -90,10 +135,24 @@ runs:
           echo "Processing IAM role: $role"
           ROLE_EXISTS=$(aws iam get-role --role-name "$role" 2>/dev/null || true)
           if [[ -n "$ROLE_EXISTS" ]]; then
-            echo "Deleting policies from role: $role"
+            echo "Deleting attached managed policies from role: $role"
             POLICY_ARNS=$(aws iam list-attached-role-policies --role-name "$role" --query "AttachedPolicies[*].PolicyArn" --output text)
             for policy in $POLICY_ARNS; do
               aws iam detach-role-policy --role-name "$role" --policy-arn "$policy" || true
+            done
+
+            echo "Deleting inline policies from role: $role"
+            INLINE_POLICIES=$(aws iam list-role-policies --role-name "$role" --query "PolicyNames[*]" --output text)
+            for inline_policy in $INLINE_POLICIES; do
+              aws iam delete-role-policy --role-name "$role" --policy-name "$inline_policy" || true
+            done
+
+            echo "Removing from and deleting instance profiles for role: $role"
+            INSTANCE_PROFILES=$(aws iam list-instance-profiles-for-role --role-name "$role" --query "InstanceProfiles[*].InstanceProfileName" --output text)
+            for profile in $INSTANCE_PROFILES; do
+              echo "Removing role $role from instance profile $profile"
+              aws iam remove-role-from-instance-profile --instance-profile-name "$profile" --role-name "$role" || true
+              aws iam delete-instance-profile --instance-profile-name "$profile" || true
             done
 
             echo "Deleting IAM role: $role"
