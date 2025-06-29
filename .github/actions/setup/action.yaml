@@ -1,0 +1,42 @@
+name: Setup AWS Resources
+description: Initializes Terraform and builds/pushes Docker image to ECR.
+
+inputs:
+  AWS_ACCESS_KEY_ID:
+    required: true
+  AWS_SECRET_ACCESS_KEY:
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ inputs.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ inputs.AWS_SECRET_ACCESS_KEY }}
+        aws-region: eu-north-1
+
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@v3
+
+    - name: Terraform init and apply
+      shell: bash
+      working-directory: terraform
+      run: |
+        terraform init
+        terraform apply -auto-approve
+
+    - name: Log in to Amazon ECR
+      shell: bash
+      run: |
+        aws ecr get-login-password --region eu-north-1 | docker login --username AWS --password-stdin 659211416364.dkr.ecr.eu-north-1.amazonaws.com
+
+    - name: Build and push Docker image
+      shell: bash
+      run: |
+        docker build -t 659211416364.dkr.ecr.eu-north-1.amazonaws.com/app:latest ./app
+        docker push 659211416364.dkr.ecr.eu-north-1.amazonaws.com/app:latest
