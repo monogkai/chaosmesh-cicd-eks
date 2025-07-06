@@ -1,10 +1,18 @@
 name: Deploy to EKS
-description: Updates kubeconfig and applies Kubernetes manifests.
+description: Updates kubeconfig, deploys app, Prometheus, and Grafana via Helm.
 
 inputs:
   AWS_ACCESS_KEY_ID:
+    description: "AWS Access Key ID"
     required: true
   AWS_SECRET_ACCESS_KEY:
+    description: "AWS Secret Access Key"
+    required: true
+  AWS_REGION:
+    description: "AWS Region"
+    required: true
+  AWS_ACCOUNT_ID:
+    description: "AWS Account ID"
     required: true
 
 runs:
@@ -15,11 +23,44 @@ runs:
       with:
         aws-access-key-id: ${{ inputs.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ inputs.AWS_SECRET_ACCESS_KEY }}
-        aws-region: eu-north-1
+        aws-region: ${{ inputs.AWS_REGION }}
 
-    - name: Deploy to EKS
+    - name: Set up kubeconfig
       shell: bash
       run: |
-        aws eks update-kubeconfig --name ci-cd-cluster --region eu-north-1
-        kubectl apply -f k8s/deployment.yaml
-        kubectl apply -f k8s/service.yaml
+        aws eks update-kubeconfig --name ci-cd-cluster --region ${{ inputs.AWS_REGION }}
+
+    - name: Install Helm
+      shell: bash
+      run: |
+        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+    - name: Add Helm repos
+      shell: bash
+      run: |
+        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+        helm repo add grafana https://grafana.github.io/helm-charts
+        helm repo update
+
+    - name: Deploy app with Helm
+      shell: bash
+      run: |
+        helm upgrade --install devops ./k8s \
+          --namespace default --create-namespace \
+          --set awsAccountId=${{ inputs.AWS_ACCOUNT_ID }} \
+          --set awsRegion=${{ inputs.AWS_REGION }}
+
+    - name: Deploy Prometheus
+      shell: bash
+      run: |
+        helm upgrade --install prometheus prometheus-community/prometheus \
+          --namespace monitoring --create-namespace \
+          --set server.persistentVolume.enabled=false
+
+    - name: Deploy Grafana
+      shell: bash
+      run: |
+        helm upgrade --install grafana grafana/grafana \
+          --namespace monitoring --create-namespace \
+          --set adminPassword='admin' \
+          --set service.type=LoadBalancer

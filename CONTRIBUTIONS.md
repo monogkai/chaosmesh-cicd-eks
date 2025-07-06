@@ -5,3 +5,5 @@
     - Use terraform to create the ECR and EKS
     - Delete resources in the end
     - Improve the workflow
+3. Add Helm, Grafana and Prometheus
+    -  region should be a Github variable

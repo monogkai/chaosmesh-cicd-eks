@@ -1,10 +1,18 @@
 name: Validate Deployment
-description: Shows deployed service and pod info.
+description: Shows deployed service and pod info, including Prometheus and Grafana.
 
 inputs:
   AWS_ACCESS_KEY_ID:
+    description: "AWS Access Key ID"
     required: true
   AWS_SECRET_ACCESS_KEY:
+    description: "AWS Secret Access Key"
+    required: true
+  AWS_REGION:
+    description: "AWS Region"
+    required: true
+  AWS_ACCOUNT_ID:
+    description: "AWS Account ID"
     required: true
 
 runs:
@@ -15,16 +23,37 @@ runs:
       with:
         aws-access-key-id: ${{ inputs.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ inputs.AWS_SECRET_ACCESS_KEY }}
-        aws-region: eu-north-1
+        aws-region: ${{ inputs.AWS_REGION }}
 
     - name: Update kubeconfig for EKS cluster
       shell: bash
       run: |
-        aws eks update-kubeconfig --region eu-north-1 --name ci-cd-cluster
+        aws eks update-kubeconfig --region ${{ inputs.AWS_REGION }} --name ci-cd-cluster
 
-    - name: Show service and pod info
+    - name: Show general service and pod info
       shell: bash
       run: |
         kubectl get svc
         kubectl get endpoints
         kubectl get pods
+
+    - name: Check Prometheus deployment status
+      shell: bash
+      run: |
+        echo "Checking Prometheus deployment in 'monitoring' namespace..."
+        echo "Listing Prometheus pods:"
+        kubectl get pods -n monitoring -l "app.kubernetes.io/name=prometheus,app.kubernetes.io/instance=prometheus"
+
+        echo "Waiting for Prometheus pods to be ready..."
+        kubectl wait --for=condition=ready pod -l "app.kubernetes.io/name=prometheus,app.kubernetes.io/instance=prometheus" -n monitoring --timeout=180s
+
+        echo "Checking Prometheus service:"
+        kubectl get svc -n monitoring prometheus-server
+
+    - name: Check Grafana deployment status
+      shell: bash
+      run: |
+        echo "Checking Grafana pods in monitoring namespace..."
+        kubectl get pods -n monitoring -l app.kubernetes.io/name=grafana
+        echo "Checking Grafana service in monitoring namespace..."
+        kubectl get svc -n monitoring grafana
