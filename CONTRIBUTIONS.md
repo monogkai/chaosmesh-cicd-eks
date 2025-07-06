@@ -6,4 +6,7 @@
     - Delete resources in the end
     - Improve the workflow
 3. Add Helm, Grafana and Prometheus
-    -  region should be a Github variable
+    - Divide terraform main.tf into multiple .tf files
+    - Deploy App, Prometheus and Grafana using Helm
+    - Use GitHub variables dynamically
+    - Add validations

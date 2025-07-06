@@ -1,5 +1,5 @@
 name: Setup AWS Resources
-description: Initializes Terraform and builds/pushes Docker image to ECR.
+description: Initializes Terraform with region/account inputs and builds/pushes Docker image to ECR.
 
 inputs:
   AWS_ACCESS_KEY_ID:
@@ -18,7 +18,7 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Checkout
+    - name: Checkout repository
       uses: actions/checkout@v2
 
     - name: Configure AWS credentials
@@ -30,6 +30,13 @@ runs:
 
     - name: Set up Terraform
       uses: hashicorp/setup-terraform@v3
+
+    - name: Create terraform.tfvars file
+      shell: bash
+      working-directory: terraform
+      run: |
+        echo "aws_region = \"${{ inputs.AWS_REGION }}\"" > terraform.tfvars
+        echo "aws_account_id = \"${{ inputs.AWS_ACCOUNT_ID }}\"" >> terraform.tfvars
 
     - name: Terraform init and apply
       shell: bash
@@ -43,8 +50,12 @@ runs:
       run: |
         aws ecr get-login-password --region ${{ inputs.AWS_REGION }} | docker login --username AWS --password-stdin ${{ inputs.AWS_ACCOUNT_ID }}.dkr.ecr.${{ inputs.AWS_REGION }}.amazonaws.com
 
-    - name: Build and push Docker image
+    - name: Build Docker image
       shell: bash
       run: |
         docker build -t ${{ inputs.AWS_ACCOUNT_ID }}.dkr.ecr.${{ inputs.AWS_REGION }}.amazonaws.com/app:latest ./app
+
+    - name: Push Docker image to ECR
+      shell: bash
+      run: |
         docker push ${{ inputs.AWS_ACCOUNT_ID }}.dkr.ecr.${{ inputs.AWS_REGION }}.amazonaws.com/app:latest
