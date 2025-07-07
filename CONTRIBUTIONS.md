@@ -5,3 +5,8 @@
     - Use terraform to create the ECR and EKS
     - Delete resources in the end
     - Improve the workflow
+3. Add Helm, Grafana and Prometheus
+    - Divide terraform main.tf into multiple .tf files
+    - Deploy App, Prometheus and Grafana using Helm
+    - Use GitHub variables dynamically
+    - Add validations
