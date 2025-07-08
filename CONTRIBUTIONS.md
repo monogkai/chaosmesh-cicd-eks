@@ -10,3 +10,4 @@
     - Deploy App, Prometheus and Grafana using Helm
     - Use GitHub variables dynamically
     - Add validations
+4. Add Chaos Mesh
