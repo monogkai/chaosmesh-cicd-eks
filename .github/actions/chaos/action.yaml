@@ -1,0 +1,61 @@
+name: Apply Chaos
+description: Use Chaos Mesh to kill a pod
+
+
+inputs:
+  AWS_ACCESS_KEY_ID:
+    description: "AWS Access Key ID"
+    required: true
+  AWS_SECRET_ACCESS_KEY:
+    description: "AWS Secret Access Key"
+    required: true
+  AWS_REGION:
+    description: "AWS Region"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ inputs.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ inputs.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ inputs.AWS_REGION }}
+
+    - name: Set up kubeconfig
+      shell: bash
+      run: |
+        aws eks update-kubeconfig --name ci-cd-cluster --region ${{ inputs.AWS_REGION }}
+
+    - name: Log pod status BEFORE chaos
+      shell: bash
+      run: |
+        echo "Pods before chaos:"
+        kubectl get pods -n default
+
+    - name: Apply Pod Failure Chaos Experiment
+      shell: bash
+      run: |
+        echo "Applying chaos experiment..."
+        kubectl apply -f ./chaos/pod-failure.yaml
+
+    - name: Wait and Observe Failure
+      shell: bash
+      run: |
+        echo "Waiting for system to experience failure..."
+        sleep 20
+        echo "Pods during chaos (should show restarts or missing pods):"
+        kubectl get pods -n default
+        echo "Events:"
+        kubectl get events -n default --sort-by=.metadata.creationTimestamp | tail -n 20
+
+    - name: Wait for Recovery
+      shell: bash
+      run: |
+        echo "Waiting for system to recover..."
+        sleep 40
+        echo "Pods after chaos (should be healthy again):"
+        kubectl get pods -n default
+        echo "Rolling update status:"
+        kubectl rollout status deployment/devops -n default --timeout=120s
