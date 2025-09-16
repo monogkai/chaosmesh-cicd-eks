@@ -8,84 +8,91 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
-  clean-up-beginning:
+  clean-up:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-      - name: Call clean up action
-        uses: ./.github/actions/clean-up
-        with:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
-
-  setup:
-    runs-on: ubuntu-latest
-    needs: clean-up-beginning
     steps:
       - name: Checkout
         uses: actions/checkout@v3
       - name: Call setup action
-        uses: ./.github/actions/setup
-        with:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
-
-  deploy:
-    runs-on: ubuntu-latest
-    needs: setup
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-      - name: Call deploy action
-        uses: ./.github/actions/deploy
-        with:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
-
-  validate:
-    runs-on: ubuntu-latest
-    needs: deploy
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-      - name: Call validate action
-        uses: ./.github/actions/validate
-        with:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
-
-  chaos:
-    runs-on: ubuntu-latest
-    needs: validate
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-      - name: Call chaos action
-        uses: ./.github/actions/chaos
-        with:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
-
-  clean-up-end:
-    runs-on: ubuntu-latest
-    needs: chaos
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-      - name: Call clean up action
         uses: ./.github/actions/clean-up
         with:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ vars.AWS_REGION }}
           AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+
+  setup-aws-resources:
+    runs-on: ubuntu-latest
+    needs: clean-up
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Call setup action
+        uses: ./.github/actions/setup-aws-resources
+        with:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          AWS_TF_BUCKET: ${{ vars.AWS_TF_BUCKET }}
+          AWS_TF_KEY: ${{ vars.AWS_TF_KEY }}
+
+  deploy-apps:
+    runs-on: ubuntu-latest
+    needs: setup-aws-resources
+    if: ${{ always() && (needs.setup-aws-resources.result == 'success' || needs.setup-aws-resources.result == 'skipped') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Call deploy action
+        uses: ./.github/actions/deploy-apps
+        with:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+
+  validate-environment:
+    runs-on: ubuntu-latest
+    needs: deploy-apps
+    if: ${{ always() && needs.deploy-apps.result == 'success' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Call validate action
+        uses: ./.github/actions/validate-environment
+        with:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+
+  chaos-tests:
+    runs-on: ubuntu-latest
+    needs: validate-environment
+    if: ${{ always() && needs.validate-environment.result == 'success' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Call chaos action
+        uses: ./.github/actions/chaos-tests
+        with:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+
+  destroy-aws-resources:
+    runs-on: ubuntu-latest
+    needs: chaos-tests
+    if: ${{ always() && needs.chaos-tests.result == 'success' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Destroy AWS resources action
+        uses: ./.github/actions/destroy-aws-resources
+        with:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_TF_BUCKET: ${{ vars.AWS_TF_BUCKET }}
+          AWS_TF_KEY: ${{ vars.AWS_TF_KEY }}

@@ -14,6 +14,12 @@ inputs:
   AWS_ACCOUNT_ID:
     description: "AWS Account ID"
     required: true
+  AWS_TF_BUCKET:
+   description: "Terraform S3 Bucket Name"
+   required: true
+  AWS_TF_KEY:
+   description: "Terraform S3 Bucket Key"
+   required: true
 
 runs:
   using: "composite"
@@ -37,12 +43,26 @@ runs:
       run: |
         echo "aws_region = \"${{ inputs.AWS_REGION }}\"" > terraform.tfvars
         echo "aws_account_id = \"${{ inputs.AWS_ACCOUNT_ID }}\"" >> terraform.tfvars
+        echo "aws_tf_bucket = \"${{ inputs.AWS_TF_BUCKET }}\"" >> terraform.tfvars
+        echo "aws_tf_key = \"${{ inputs.AWS_TF_KEY }}\"" >> terraform.tfvars
+
+    - name: Ensure Terraform backend S3 bucket exists
+      shell: bash
+      run: |
+        aws s3api head-bucket --bucket ${{ inputs.AWS_TF_BUCKET }} 2>/dev/null || \
+        aws s3api create-bucket \
+          --bucket ${{ inputs.AWS_TF_BUCKET }} \
+          --region ${{ inputs.AWS_REGION }} \
+          --create-bucket-configuration LocationConstraint=${{ inputs.AWS_REGION }}
 
     - name: Terraform init and apply
       shell: bash
       working-directory: terraform
       run: |
-        terraform init
+        terraform init \
+          -backend-config="bucket=${{ inputs.AWS_TF_BUCKET }}" \
+          -backend-config="key=${{ inputs.AWS_TF_KEY }}" \
+          -backend-config="region=${{ inputs.AWS_REGION }}"
         terraform apply -auto-approve
 
     - name: Log in to Amazon ECR
