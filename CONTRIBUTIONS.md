@@ -13,3 +13,7 @@
 4. Add Chaos Mesh
     - Add an extra step to do chaos experiments
     - Add pod failure experiment
+5. Use Terraform state
+    - Save a S3 to store the terraform state file
+    - Start to use terraform destroy, instead of running a script to delete each aws resource
+    - Update workflow

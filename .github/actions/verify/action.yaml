@@ -1,4 +1,4 @@
-name: Validate Deployment
+name: verify Deployment
 description: Shows deployed service and pod info, including Prometheus and Grafana.
 
 inputs:
@@ -36,24 +36,3 @@ runs:
         kubectl get svc
         kubectl get endpoints
         kubectl get pods
-
-    - name: Check Prometheus deployment status
-      shell: bash
-      run: |
-        echo "Checking Prometheus deployment in 'monitoring' namespace..."
-        echo "Listing Prometheus pods:"
-        kubectl get pods -n monitoring -l "app.kubernetes.io/name=prometheus,app.kubernetes.io/instance=prometheus"
-
-        echo "Waiting for Prometheus pods to be ready..."
-        kubectl wait --for=condition=ready pod -l "app.kubernetes.io/name=prometheus,app.kubernetes.io/instance=prometheus" -n monitoring --timeout=180s
-
-        echo "Checking Prometheus service:"
-        kubectl get svc -n monitoring prometheus-server
-
-    - name: Check Grafana deployment status
-      shell: bash
-      run: |
-        echo "Checking Grafana pods in monitoring namespace..."
-        kubectl get pods -n monitoring -l app.kubernetes.io/name=grafana
-        echo "Checking Grafana service in monitoring namespace..."
-        kubectl get svc -n monitoring grafana

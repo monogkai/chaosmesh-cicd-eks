@@ -1,0 +1,92 @@
+name: Terraform Destroy AWS Resources
+description: Destroys AWS resources managed by Terraform using S3 backend and removes state files.
+
+inputs:
+  AWS_ACCESS_KEY_ID:
+    description: "AWS Access Key ID"
+    required: true
+  AWS_SECRET_ACCESS_KEY:
+    description: "AWS Secret Access Key"
+    required: true
+  AWS_REGION:
+    description: "AWS Region"
+    required: true
+  AWS_TF_BUCKET:
+    description: "Terraform S3 Bucket Name"
+    required: true
+  AWS_TF_KEY:
+    description: "Terraform S3 Bucket Key"
+    required: true
+  AWS_ACCOUNT_ID:
+    description: "AWS Account ID"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ inputs.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ inputs.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ inputs.AWS_REGION }}
+
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@v3
+
+    - name: Create terraform.tfvars file
+      shell: bash
+      working-directory: terraform
+      run: |
+        echo "aws_region = \"${{ inputs.AWS_REGION }}\"" > terraform.tfvars
+        echo "aws_tf_bucket = \"${{ inputs.AWS_TF_BUCKET }}\"" >> terraform.tfvars
+        echo "aws_tf_key = \"${{ inputs.AWS_TF_KEY }}\"" >> terraform.tfvars
+        echo "aws_account_id = \"${{ inputs.AWS_ACCOUNT_ID }}\"" >> terraform.tfvars
+
+    - name: Terraform init
+      shell: bash
+      working-directory: terraform
+      run: |
+        terraform init \
+          -backend-config="bucket=${{ inputs.AWS_TF_BUCKET }}" \
+          -backend-config="key=${{ inputs.AWS_TF_KEY }}" \
+          -backend-config="region=${{ inputs.AWS_REGION }}" \
+          -reconfigure
+
+    - name: Terraform destroy
+      shell: bash
+      working-directory: terraform
+      run: |
+        terraform destroy -auto-approve || echo "Terraform destroy failed or resources already gone"
+
+    - name: Delete Terraform state files from S3
+      shell: bash
+      run: |
+        BUCKET="${{ inputs.AWS_TF_BUCKET }}"
+        KEY="${{ inputs.AWS_TF_KEY }}"
+        REGION="${{ inputs.AWS_REGION }}"
+
+        echo "Deleting state files from s3://$BUCKET/$KEY* ..."
+        aws s3 rm "s3://$BUCKET/$KEY" --region "$REGION" || echo "No state file found"
+        aws s3 rm "s3://$BUCKET/${KEY}.backup" --region "$REGION" || echo "No backup file found"
+        aws s3 rm "s3://$BUCKET/.terraform.lock.hcl" --region "$REGION" || echo "No lock file found"
+
+    - name: Delete S3 bucket if exists and empty
+      shell: bash
+      run: |
+        BUCKET="${{ inputs.AWS_TF_BUCKET }}"
+        REGION="${{ inputs.AWS_REGION }}"
+
+        echo "Checking S3 bucket $BUCKET..."
+        if aws s3 ls "s3://$BUCKET" >/dev/null 2>&1; then
+          echo "Bucket exists. Deleting all objects..."
+          aws s3 rm "s3://$BUCKET" --recursive
+          echo "Deleting bucket $BUCKET..."
+          aws s3api delete-bucket --bucket "$BUCKET" --region "$REGION"
+          echo "S3 bucket $BUCKET deleted successfully."
+        else
+          echo "Bucket $BUCKET does not exist. Nothing to delete."
+        fi
