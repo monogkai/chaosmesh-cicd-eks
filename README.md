@@ -30,11 +30,11 @@ This project demonstrates a complete DevOps CI/CD pipeline with a primary focus 
 .
 ├── .github
 │   ├── actions                  # Custom reusable composite actions
-│   │   ├── cleanup-up           # Remove all resources
-│   │   ├── setup                # Terraform apply (EKS, VPC, ECR)
-│   │   ├── deploy               # Helm deployment + monitoring + chaos
-│   │   ├── validate             # Verify deployment
-│   │   └── chaos                # Chaos experiments and validate them
+│   │   ├── provision            # Terraform init/plan/apply (EKS, VPC, ECR)
+│   │   ├── deploy               # Helm deployment + monitoring + chaos setup
+│   │   ├── verify               # Validate deployment
+│   │   ├── chaos                # Chaos experiments + recovery validation
+│   │   └── teardown             # Destroy infra + clean S3 state
 │   └── workflows
 │       └── ci-cd-pipeline.yaml  # Main workflow trigger file
 ├── app                          # App source + Dockerfile
@@ -52,7 +52,7 @@ This project demonstrates a complete DevOps CI/CD pipeline with a primary focus 
 │   ├── variables.tf             # Terraform variables
 │   └── ecr.tf                   # ECR repository setup
 ├── chaos
-│   └── pod-failure.yaml         # Kills one random pod
+│   └── pod-failure.yaml         # Chaos Mesh pod kill experiment
 └── README.md                    # Project documentation
 ```
 
@@ -76,6 +76,8 @@ You can find the experiments under the `chaos/` folder.
 - GitHub repository with variables:
   - `AWS_REGION`
   - `ACCOUNT_ID`
+  - `AWS_TF_BUCKET`
+  - `AWS_TF_KEY`
 
 ## Setup Instructions
 
@@ -88,7 +90,7 @@ cd chaos-cicd-pipeline
 
 ### 2. Configure GitHub Secrets and Variables
 
-Add the following values to repo Actions secrets and variables: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, and `ACCOUNT_ID`.
+Add the following values to repo Actions secrets and variables: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `ACCOUNT_ID`, `AWS_TF_BUCKET` and `AWS_TF_KEY`.
 
 ### 3. Trigger the CI/CD
 
@@ -102,25 +104,24 @@ This project uses manual triggers for CI/CD workflows via GitHub Actions:
 ## CI/CD Pipeline Overview
 
 The pipeline (`.github/workflows/ci-cd-pipeline.yaml`) executes the following steps in order:
-1. Terraform Infra Setup
-    - Provisions VPC, IAM roles, EKS cluster, ECR repo, etc.
+1. Provision
+    - Provisions VPC, IAM roles, EKS cluster, and ECR repo with Terraform
 
-2. Docker Image Build & Push
-    - Builds app image and pushes to ECR
-
-3. Helm Deploy to EKS
-    - Deploys:
+2. Deploy
+    - Builds Docker image and pushes to ECR
+    - Deploys with Helm:
         - Javascript App
         - Prometheus
         - Grafana
         - Chaos Mesh
 
-4. Run Chaos Experiments
+3. Verify
+    - Validates Kubernetes rollout and app health
+
+4. Chaos
     - Injects faults (e.g., Pod Kill)
+    - Ensures system breaks and recovers successfully
 
-5. Validate Chaos
-    - Checks that system breaks
-    - Ensures it recovers post-injection
-
-6. Cleanup
-    - Delete all resources
+5. Teardown
+    - Destroys AWS resources with Terraform
+    - Deletes Terraform state from S3 and removes the bucket

@@ -59,7 +59,7 @@ runs:
       shell: bash
       working-directory: terraform
       run: |
-        terraform init \
+        terraform init -upgrade \
           -backend-config="bucket=${{ inputs.AWS_TF_BUCKET }}" \
           -backend-config="key=${{ inputs.AWS_TF_KEY }}" \
           -backend-config="region=${{ inputs.AWS_REGION }}"

@@ -1,4 +1,4 @@
-name: Validate Deployment
+name: verify Deployment
 description: Shows deployed service and pod info, including Prometheus and Grafana.
 
 inputs:
