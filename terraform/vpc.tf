@@ -9,6 +9,11 @@ resource "aws_vpc" "eks_vpc" {
 
 resource "aws_internet_gateway" "eks_igw" {
   vpc_id = aws_vpc.eks_vpc.id
+
+  depends_on = [
+    aws_eks_cluster.ci_cd_cluster,
+    aws_eks_node_group.default
+  ]
 }
 
 resource "aws_route_table" "eks_route_table" {
