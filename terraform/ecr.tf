@@ -3,4 +3,5 @@ resource "aws_ecr_repository" "app" {
   tags = {
     Environment = "ci-cd"
   }
+  force_delete = true
 }
