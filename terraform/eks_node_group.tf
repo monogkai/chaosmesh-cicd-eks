@@ -10,6 +10,8 @@ resource "aws_eks_node_group" "default" {
     min_size     = 1
   }
 
+  instance_types = ["t2.micro"]
+
   depends_on = [
     aws_eks_cluster.ci_cd_cluster,
     aws_iam_role_policy_attachment.node_AmazonEKSWorkerNodePolicy,
