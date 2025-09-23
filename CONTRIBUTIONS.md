@@ -17,3 +17,5 @@
     - Save a S3 to store the terraform state file
     - Start to use terraform destroy, instead of running a script to delete each aws resource
     - Update workflow
+6. Convert chaos step to access multiple experiments
+    - Add cpu stress experiment

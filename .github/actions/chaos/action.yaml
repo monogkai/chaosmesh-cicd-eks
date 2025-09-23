@@ -1,6 +1,5 @@
 name: Apply Chaos
-description: Use Chaos Mesh to kill a pod
-
+description: Run all Chaos Mesh experiments dynamically and validate recovery
 
 inputs:
   AWS_ACCESS_KEY_ID:
@@ -28,34 +27,39 @@ runs:
       run: |
         aws eks update-kubeconfig --name ci-cd-cluster --region ${{ inputs.AWS_REGION }}
 
-    - name: Log pod status BEFORE chaos
+    - name: Run Chaos Experiments
       shell: bash
       run: |
-        echo "Pods before chaos:"
-        kubectl get pods -n default
+        set -euo pipefail
 
-    - name: Apply Pod Failure Chaos Experiment
-      shell: bash
-      run: |
-        echo "Applying chaos experiment..."
-        kubectl apply -f ./chaos/pod-failure.yaml
+        for experiment in ./chaos/*.yaml; do
+          echo "============================================="
+          echo " Running Chaos Experiment: $experiment"
+          echo "============================================="
 
-    - name: Wait and Observe Failure
-      shell: bash
-      run: |
-        echo "Waiting for system to experience failure..."
-        sleep 20
-        echo "Pods during chaos (should show restarts or missing pods):"
-        kubectl get pods -n default
-        echo "Events:"
-        kubectl get events -n default --sort-by=.metadata.creationTimestamp | tail -n 20
+          echo "Pods before chaos:"
+          kubectl get pods -n default
 
-    - name: Wait for Recovery
-      shell: bash
-      run: |
-        echo "Waiting for system to recover..."
-        sleep 40
-        echo "Pods after chaos (should be healthy again):"
-        kubectl get pods -n default
-        echo "Rolling update status:"
-        kubectl rollout status deployment/devops -n default --timeout=120s
+          echo "Applying chaos experiment: $experiment"
+          kubectl apply -f "$experiment"
+
+          echo "Waiting for system to experience failure..."
+          sleep 20
+          kubectl get pods -n default || true
+          kubectl get events -n default --sort-by=.metadata.creationTimestamp | tail -n 20 || true
+
+          echo "Waiting for system to recover..."
+          sleep 40
+
+          # STRICT validation — fail if rollout not complete
+          echo "Validating recovery of deployment 'devops'..."
+          if ! kubectl rollout status deployment/devops -n default --timeout=120s; then
+            echo "Experiment $experiment FAILED: system did not recover"
+            exit 1
+          fi
+
+          echo "Experiment $experiment PASSED: system recovered"
+
+          echo "Cleaning up chaos experiment: $experiment"
+          kubectl delete -f "$experiment" --ignore-not-found=true
+        done
