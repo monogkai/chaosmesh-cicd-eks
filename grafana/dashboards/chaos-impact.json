@@ -1,0 +1,39 @@
+{
+    "id": null,
+    "title": "Chaos Impact - my-app",
+    "tags": ["chaos", "my-app"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "type": "graph",
+        "title": "p95 latency (s)",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"my-app\"}[1m])) by (le))",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x":0,"y":0,"w":24,"h":6}
+      },
+      {
+        "type": "graph",
+        "title": "Requests/s and 5xx count",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{job=\"my-app\"}[1m]))",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(rate(http_requests_total{job=\"my-app\",code=~\"5..\"}[1m]))",
+            "refId": "B"
+          }
+        ],
+        "gridPos": {"x":0,"y":6,"w":24,"h":6}
+      }
+    ],
+    "schemaVersion": 16,
+    "version": 0
+  }
+  

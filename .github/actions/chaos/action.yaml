@@ -1,5 +1,5 @@
-name: Apply Chaos
-description: Run all Chaos Mesh experiments dynamically and validate recovery
+name: "Run Chaos Experiments and Annotate Grafana"
+description: "Run Chaos Mesh tests and post annotations to Grafana"
 
 inputs:
   AWS_ACCESS_KEY_ID:
@@ -11,6 +11,9 @@ inputs:
   AWS_REGION:
     description: "AWS Region"
     required: true
+  GRAFANA_API_KEY:
+    description: "Grafana Admin API Key"
+    required: false
 
 runs:
   using: "composite"
@@ -51,7 +54,6 @@ runs:
           echo "Waiting for system to recover..."
           sleep 40
 
-          # STRICT validation — fail if rollout not complete
           echo "Validating recovery of deployment 'devops'..."
           if ! kubectl rollout status deployment/devops -n default --timeout=120s; then
             echo "Experiment $experiment FAILED: system did not recover"
@@ -63,3 +65,52 @@ runs:
           echo "Cleaning up chaos experiment: $experiment"
           kubectl delete -f "$experiment" --ignore-not-found=true
         done
+
+    - name: Get Grafana LoadBalancer URL
+      id: grafana
+      shell: bash
+      run: |
+        echo "Finding Grafana LoadBalancer external URL..."
+        for i in {1..30}; do
+          url=$(kubectl get svc grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          if [ -z "$url" ]; then
+            url=$(kubectl get svc grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          fi
+          if [ -n "$url" ] && [ "$url" != "<pending>" ]; then
+            echo "Found Grafana URL: http://$url"
+            echo "GRAFANA_URL=http://$url" >> $GITHUB_ENV
+            exit 0
+          fi
+          echo "Still waiting for Grafana LoadBalancer..."
+          sleep 10
+        done
+        echo "ERROR: Could not retrieve Grafana LoadBalancer URL"
+        exit 1
+
+    - name: Add Grafana Annotations
+      if: ${{ inputs.GRAFANA_API_KEY != '' }}
+      shell: bash
+      run: |
+        echo "Adding Chaos Mesh annotations to Grafana..."
+        echo "Using Grafana URL: $GRAFANA_URL"
+
+        CHAOS_EVENTS=$(kubectl get events -A --sort-by=.metadata.creationTimestamp | grep Chaos || true)
+
+        if [ -n "$CHAOS_EVENTS" ]; then
+          while read -r ns name _; do
+              timestamp=$(date +%s000)
+              echo "Annotating: $name from ns=$ns ts=$timestamp"
+
+              curl -s -X POST "$GRAFANA_URL/api/annotations" \
+                -H "Authorization: Bearer ${{ inputs.GRAFANA_API_KEY }}" \
+                -H "Content-Type: application/json" \
+                -d "{
+                      \"text\": \"Chaos experiment ${name} in ${ns}\",
+                      \"tags\": [\"chaos\", \"${ns}\"],
+                      \"time\": ${timestamp}
+                    }" \
+                || echo "Failed to annotate $name"
+          done <<< "$(printf "%s\n" "$CHAOS_EVENTS" | awk '{print $1, $2}')"
+        else
+          echo "No chaos events found."
+        fi

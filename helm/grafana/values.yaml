@@ -1,0 +1,41 @@
+grafana:
+  enabled: true
+  adminUser: admin
+  adminPassword: admin               # change in production; use Kubernetes secret
+  persistence:
+    enabled: true
+    size: 5Gi
+
+# Provision dashboards via config map/files
+dashboards:
+  default:
+    app-dashboard.json: |-
+{{- printf "%s" .Files.Get "grafana/dashboards/app-dashboard.json" | indent 6 }}
+    chaos-impact.json: |-
+{{- printf "%s" .Files.Get "grafana/dashboards/chaos-impact.json" | indent 6 }}
+
+# Dashboard providers
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        options:
+          path: /var/lib/grafana/dashboards/default
+
+# Sidecar provisioning for datasources (if using grafana chart with sidecar)
+sidecar:
+  dashboards:
+    enabled: true
+    label: grafana_dashboard
+    folder: /var/lib/grafana/dashboards/default
+  datasources:
+    enabled: true
+    label: grafana_datasource
+
+# If chart requires datasources configMap
+extraConfigmapMounts: []
