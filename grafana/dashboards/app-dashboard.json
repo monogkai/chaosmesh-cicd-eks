@@ -1,0 +1,60 @@
+{
+    "id": null,
+    "uid": "app-dashboard",
+    "title": "App Overview - my-app",
+    "tags": ["app", "my-app"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "type": "timeseries",
+        "title": "Requests per second",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{job=\"my-app\"}[1m]))",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x":0,"y":0,"w":12,"h":6}
+      },
+      {
+        "type": "timeseries",
+        "title": "p95 latency (s)",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"my-app\"}[5m])) by (le))",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x":12,"y":0,"w":12,"h":6}
+      },
+      {
+        "type": "timeseries",
+        "title": "Error rate (5xx) %",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "100 * (sum(rate(http_requests_total{job=\"my-app\",code=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"my-app\"}[5m])))",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x":0,"y":6,"w":12,"h":6}
+      },
+      {
+        "type": "timeseries",
+        "title": "Pod CPU Usage (cores)",
+        "datasource": "Prometheus",
+        "targets": [
+          {
+            "expr": "sum(rate(container_cpu_usage_seconds_total{pod=~\"my-app.*\"}[5m])) by (pod)",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x":12,"y":6,"w":12,"h":6}
+      }
+    ],
+    "schemaVersion": 16,
+    "version": 0
+  }
+  

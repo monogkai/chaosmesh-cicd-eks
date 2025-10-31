@@ -58,11 +58,12 @@ This project demonstrates a complete DevOps CI/CD pipeline with a primary focus 
 
 ## Chaos Experiments
 
-Chaos Mesh experiments included:
+This project includes the following Chaos Mesh experiments to simulate real-world failure scenarios and validate system resilience:
 
-| Type         | Description                                |
-|--------------|--------------------------------------------|
-| `PodKill`    | Terminates selected pods randomly          |
+| Experiment Type   | Description                                             |
+|-------------------|---------------------------------------------------------|
+| `pod-failure`     | Simulates pod unavailability for a specified duration.  |
+| `cpu-stress`      | Generates high CPU load inside the target container.    |
 
 You can find the experiments under the `chaos/` folder.
 
@@ -119,7 +120,7 @@ The pipeline (`.github/workflows/ci-cd-pipeline.yaml`) executes the following st
     - Validates Kubernetes rollout and app health
 
 4. Chaos
-    - Injects faults (e.g., Pod Kill)
+    - Injects faults (e.g., Pod Failure)
     - Ensures system breaks and recovers successfully
 
 5. Teardown

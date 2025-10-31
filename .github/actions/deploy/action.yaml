@@ -1,5 +1,5 @@
-name: Deploy to EKS
-description: Updates kubeconfig, deploys app, Prometheus, Grafana, and Chaos Mesh via Helm.
+name: "Deploy to EKS with Grafana Dashboards"
+description: "Deploy app, Prometheus, Grafana, and Chaos Mesh to EKS"
 
 inputs:
   AWS_ACCESS_KEY_ID:
@@ -14,6 +14,9 @@ inputs:
   AWS_ACCOUNT_ID:
     description: "AWS Account ID"
     required: true
+  GRAFANA_API_KEY:
+    description: "Grafana Admin API Key (optional for dashboards)"
+    required: false
 
 runs:
   using: "composite"
@@ -74,3 +77,59 @@ runs:
           --set chaosDaemon.runtime=containerd \
           --set chaosDaemon.socketPath=/run/containerd/containerd.sock \
           --set dashboard.create=true
+
+    - name: Wait for Grafana LoadBalancer URL
+      id: grafana
+      shell: bash
+      run: |
+        echo "Waiting for Grafana LoadBalancer external URL..."
+
+        for i in {1..30}; do
+          url=$(kubectl get svc grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          if [ -z "$url" ]; then
+            url=$(kubectl get svc grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          fi
+
+          if [ -n "$url" ] && [ "$url" != "<pending>" ]; then
+            GRAFANA_URL="http://$url"
+            echo "Grafana URL found: $GRAFANA_URL"
+            echo "GRAFANA_URL=$GRAFANA_URL" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          echo "Still waiting for Grafana LoadBalancer..."
+          sleep 10
+        done
+
+        echo "ERROR: Grafana LoadBalancer URL not found."
+        exit 1
+
+    - name: Upload Grafana Dashboards
+      if: ${{ inputs.GRAFANA_API_KEY != '' }}
+      shell: bash
+      run: |
+        echo "Uploading dashboards to Grafana at $GRAFANA_URL"
+
+        for dashboard in grafana/dashboards/*.json; do
+          name=$(basename "$dashboard" .json)
+          echo "Uploading $name dashboard..."
+
+          payload=$(jq -n \
+            --argfile db "$dashboard" \
+            '{ dashboard: $db, overwrite: true }'
+          )
+
+          status=$(curl -s -o /tmp/resp.txt -w "%{http_code}" \
+            -X POST "$GRAFANA_URL/api/dashboards/db" \
+            -H "Authorization: Bearer ${{ inputs.GRAFANA_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "$payload"
+          )
+
+          if [ "$status" -eq 200 ]; then
+            echo "Uploaded $name"
+          else
+            echo "Failed to upload $name (HTTP $status)"
+            cat /tmp/resp.txt
+          fi
+        done
