@@ -110,13 +110,16 @@ runs:
       run: |
         echo "Uploading dashboards to Grafana at $GRAFANA_URL"
 
+        sudo apt-get update
+        sudo apt-get install -y jq
+
         for dashboard in grafana/dashboards/*.json; do
           name=$(basename "$dashboard" .json)
           echo "Uploading $name dashboard..."
 
           payload=$(jq -n \
-            --argfile db "$dashboard" \
-            '{ dashboard: $db, overwrite: true }'
+            --slurpfile db "$dashboard" \
+            '{ dashboard: $db[0], overwrite: true }'
           )
 
           status=$(curl -s -o /tmp/resp.txt -w "%{http_code}" \
