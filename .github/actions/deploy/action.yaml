@@ -14,9 +14,6 @@ inputs:
   AWS_ACCOUNT_ID:
     description: "AWS Account ID"
     required: true
-  GRAFANA_API_KEY:
-    description: "Grafana Admin API Key (optional for dashboards)"
-    required: false
 
 runs:
   using: "composite"
@@ -104,6 +101,30 @@ runs:
         echo "ERROR: Grafana LoadBalancer URL not found."
         exit 1
 
+    - name: Create Grafana API Key
+      shell: bash
+      run: |
+        echo "Creating Grafana API key..."
+
+        GRAFANA_PASSWORD="admin"
+
+        payload='{"name":"ci-key","role":"Admin"}'
+
+        response=$(curl -s -X POST "$GRAFANA_URL/api/auth/keys" \
+          -H "Content-Type: application/json" \
+          -u admin:$GRAFANA_PASSWORD \
+          -d "$payload")
+
+        api_key=$(echo "$response" | jq -r '.key')
+
+        if [ "$api_key" = "null" ] || [ -z "$api_key" ]; then
+          echo "Error: Failed to generate Grafana API key"
+          echo "$response"
+          exit 1
+        fi
+
+        echo "GRAFANA_API_KEY=$api_key" >> $GITHUB_ENV
+
     - name: Upload Grafana Dashboards
       if: ${{ inputs.GRAFANA_API_KEY != '' }}
       shell: bash
@@ -124,7 +145,7 @@ runs:
 
           status=$(curl -s -o /tmp/resp.txt -w "%{http_code}" \
             -X POST "$GRAFANA_URL/api/dashboards/db" \
-            -H "Authorization: Bearer ${{ inputs.GRAFANA_API_KEY }}" \
+            -H "Authorization: Bearer $GRAFANA_API_KEY" \
             -H "Content-Type: application/json" \
             -d "$payload"
           )
