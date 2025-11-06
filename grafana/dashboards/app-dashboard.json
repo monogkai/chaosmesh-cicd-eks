@@ -1,17 +1,21 @@
 {
     "id": null,
     "uid": "app-dashboard",
-    "title": "App Overview - my-app",
-    "tags": ["app", "my-app"],
+    "title": "App Overview - devops",
+    "tags": ["app", "devops"],
     "timezone": "browser",
     "panels": [
       {
         "type": "timeseries",
         "title": "Requests per second",
-        "datasource": "Prometheus",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
         "targets": [
           {
-            "expr": "sum(rate(http_requests_total{job=\"my-app\"}[1m]))",
+            "expr": "sum(irate(http_requests_total{kubernetes_namespace=\"default\"}[2m])) or sum(rate(http_requests_total[5m]))",
+            "legendFormat": "Requests/s",
             "refId": "A"
           }
         ],
@@ -20,10 +24,13 @@
       {
         "type": "timeseries",
         "title": "p95 latency (s)",
-        "datasource": "Prometheus",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
         "targets": [
           {
-            "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"my-app\"}[5m])) by (le))",
+            "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{kubernetes_namespace=\"default\"}[5m])) by (le))",
             "refId": "A"
           }
         ],
@@ -32,10 +39,14 @@
       {
         "type": "timeseries",
         "title": "Error rate (5xx) %",
-        "datasource": "Prometheus",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
         "targets": [
           {
-            "expr": "100 * (sum(rate(http_requests_total{job=\"my-app\",code=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"my-app\"}[5m])))",
+            "expr": "(100 * sum(irate(http_requests_total{kubernetes_namespace=\"default\",code=~\"5..\"}[2m])) / sum(irate(http_requests_total{kubernetes_namespace=\"default\"}[2m]))) or on() vector(0)",
+            "legendFormat": "Error rate %",
             "refId": "A"
           }
         ],
@@ -44,10 +55,13 @@
       {
         "type": "timeseries",
         "title": "Pod CPU Usage (cores)",
-        "datasource": "Prometheus",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
         "targets": [
           {
-            "expr": "sum(rate(container_cpu_usage_seconds_total{pod=~\"my-app.*\"}[5m])) by (pod)",
+            "expr": "sum(rate(container_cpu_usage_seconds_total{pod=~\"devops.*\"}[5m])) by (pod)",
             "refId": "A"
           }
         ],

@@ -1,17 +1,24 @@
 {
     "id": null,
     "uid": "chaos-impact",
-    "title": "Chaos Impact - my-app",
-    "tags": ["chaos", "my-app"],
+    "title": "Chaos Impact - devops",
+    "tags": [
+      "chaos", 
+      "devops"
+    ],
     "timezone": "browser",
     "panels": [
       {
         "type": "timeseries",
         "title": "p95 latency (s)",
-        "datasource": "Prometheus",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
         "targets": [
           {
-            "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"my-app\"}[1m])) by (le))",
+            "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{kubernetes_namespace=\"default\"}[2m])) by (le))",
+            "legendFormat": "p95 latency",
             "refId": "A"
           }
         ],
@@ -20,14 +27,19 @@
       {
         "type": "timeseries",
         "title": "Requests/s and 5xx count",
-        "datasource": "Prometheus",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
         "targets": [
           {
-            "expr": "sum(rate(http_requests_total{job=\"my-app\"}[1m]))",
+            "expr": "sum(irate(http_requests_total{kubernetes_namespace=\"default\"}[2m]))",
+            "legendFormat": "Total requests/s",
             "refId": "A"
           },
           {
-            "expr": "sum(rate(http_requests_total{job=\"my-app\",code=~\"5..\"}[1m]))",
+            "expr": "sum(irate(http_requests_total{kubernetes_namespace=\"default\",code=~\"5..\"}[2m]))",
+            "legendFormat": "5xx errors/s",
             "refId": "B"
           }
         ],

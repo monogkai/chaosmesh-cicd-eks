@@ -56,15 +56,14 @@ runs:
       run: |
         helm upgrade --install prometheus prometheus-community/prometheus \
           --namespace monitoring --create-namespace \
-          --set server.persistentVolume.enabled=false
+          -f helm/prometheus/values.yaml
 
     - name: Deploy Grafana
       shell: bash
       run: |
         helm upgrade --install grafana grafana/grafana \
           --namespace monitoring --create-namespace \
-          --set adminPassword='admin' \
-          --set service.type=LoadBalancer
+          -f helm/grafana/values.yaml
 
     - name: Deploy Chaos Mesh
       shell: bash
@@ -80,80 +79,127 @@ runs:
       shell: bash
       run: |
         echo "Waiting for Grafana LoadBalancer external URL..."
-
         for i in {1..30}; do
           url=$(kubectl get svc grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
           if [ -z "$url" ]; then
             url=$(kubectl get svc grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
           fi
-
           if [ -n "$url" ] && [ "$url" != "<pending>" ]; then
             GRAFANA_URL="http://$url"
             echo "Grafana URL found: $GRAFANA_URL"
             echo "GRAFANA_URL=$GRAFANA_URL" >> $GITHUB_ENV
             exit 0
           fi
-
           echo "Still waiting for Grafana LoadBalancer..."
           sleep 10
         done
-
         echo "ERROR: Grafana LoadBalancer URL not found."
         exit 1
 
-    - name: Create Grafana API Key
+    - name: Wait for Grafana API to become ready
       shell: bash
       run: |
-        echo "Creating Grafana API key..."
+        echo "Checking Grafana readiness..."
+        echo "GRAFANA_URL is $GRAFANA_URL"
 
-        GRAFANA_PASSWORD="admin"
+        # First, wait for Grafana pod to be ready
+        echo "Waiting for Grafana pod to be ready..."
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=grafana -n monitoring --timeout=300s || true
 
-        payload='{"name":"ci-key","role":"Admin"}'
-
-        response=$(curl -s -X POST "$GRAFANA_URL/api/auth/keys" \
-          -H "Content-Type: application/json" \
-          -u admin:$GRAFANA_PASSWORD \
-          -d "$payload")
-
-        api_key=$(echo "$response" | jq -r '.key')
-
-        if [ "$api_key" = "null" ] || [ -z "$api_key" ]; then
-          echo "Error: Failed to generate Grafana API key"
-          echo "$response"
-          exit 1
-        fi
-
-        echo "GRAFANA_API_KEY=$api_key" >> $GITHUB_ENV
+        # Then check the API endpoint
+        for i in {1..60}; do
+          echo "Attempt $i/60: Checking Grafana API health..."
+          status=$(curl -s -o /dev/null -w "%{http_code}" "$GRAFANA_URL/api/health" || echo "000")
+          if [ "$status" -eq 200 ]; then
+            echo "Grafana is ready!"
+            exit 0
+          fi
+          echo "Grafana not ready yet (HTTP $status). Retrying in 10 seconds..."
+          sleep 5
+        done
+        echo "ERROR: Grafana did not become ready in time."
+        echo "Checking Grafana pod status..."
+        kubectl get pods -n monitoring -l app.kubernetes.io/name=grafana
+        kubectl describe pods -n monitoring -l app.kubernetes.io/name=grafana
+        exit 1
 
     - name: Upload Grafana Dashboards
-      if: ${{ inputs.GRAFANA_API_KEY != '' }}
       shell: bash
       run: |
         echo "Uploading dashboards to Grafana at $GRAFANA_URL"
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq jq
 
-        sudo apt-get update
-        sudo apt-get install -y jq
+        # Retrieve the actual admin password from the Grafana secrets
+        echo "Retrieving Grafana admin password..."
+        GRAFANA_PASSWORD=$(kubectl get secret --namespace monitoring grafana -o jsonpath="{.data.admin-password}" | base64 --decode)
+        echo "Password retrieved successfully"
 
         for dashboard in grafana/dashboards/*.json; do
           name=$(basename "$dashboard" .json)
           echo "Uploading $name dashboard..."
-
-          payload=$(jq -n \
-            --slurpfile db "$dashboard" \
-            '{ dashboard: $db[0], overwrite: true }'
-          )
-
+          payload=$(jq -n --slurpfile db "$dashboard" '{ dashboard: $db[0], overwrite: true }')
           status=$(curl -s -o /tmp/resp.txt -w "%{http_code}" \
             -X POST "$GRAFANA_URL/api/dashboards/db" \
-            -H "Authorization: Bearer $GRAFANA_API_KEY" \
+            -u "admin:$GRAFANA_PASSWORD" \
             -H "Content-Type: application/json" \
-            -d "$payload"
-          )
-
+            -d "$payload")
           if [ "$status" -eq 200 ]; then
-            echo "Uploaded $name"
+            echo "Successfully uploaded $name dashboard"
           else
-            echo "Failed to upload $name (HTTP $status)"
+            echo "Failed to upload $name dashboard (HTTP $status)"
             cat /tmp/resp.txt
           fi
         done
+        echo "Dashboard upload process completed."
+    
+    - name: Generate traffic to populate metrics
+      shell: bash
+      run: |
+        echo "Generating traffic to devops app to populate Prometheus metrics..."
+        APP_HOST=$(kubectl get svc devops -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+        if [ -z "$APP_HOST" ]; then
+          APP_HOST=$(kubectl get svc devops -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        fi
+        if [ -z "$APP_HOST" ]; then
+          echo "No external LoadBalancer found, using internal service"
+          cat <<EOF | kubectl apply -f -
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: traffic-generator
+          namespace: default
+        spec:
+          ttlSecondsAfterFinished: 60
+          template:
+            spec:
+              containers:
+              - name: curl
+                image: curlimages/curl:latest
+                command:
+                - /bin/sh
+                args:
+                - -c
+                - |
+                  for i in \$(seq 1 100); do
+                    curl -s http://devops.default.svc.cluster.local/ > /dev/null && echo "Request \$i succeeded" || echo "Request \$i failed"
+                    sleep 0.3
+                  done
+              restartPolicy: Never
+        EOF
+          echo "Waiting for traffic generator job to complete..."
+          kubectl wait --for=condition=complete --timeout=60s job/traffic-generator -n default || true
+          kubectl logs job/traffic-generator -n default
+          kubectl delete job traffic-generator -n default
+          echo "Traffic generator job completed."
+        else
+          APP_URL="http://$APP_HOST"
+          echo "App Url: $APP_URL"
+          echo "Sending 50 requests..."
+          for i in {1..50}; do
+            curl -s $APP_URL > /dev/null && echo "Request $i succeeded" || echo "Request $i failed"
+            sleep 0.5
+          done
+        fi
+
+        echo "Traffic generation completed! Metrics should now be available in Grafana."

@@ -1,41 +1,48 @@
-grafana:
-  enabled: true
-  adminUser: admin
-  adminPassword: admin               # change in production; use Kubernetes secret
-  persistence:
-    enabled: true
-    size: 5Gi
+adminUser: admin
+adminPassword: admin
 
-# Provision dashboards via config map/files
-dashboards:
-  default:
-    app-dashboard.json: |-
-{{- printf "%s" .Files.Get "grafana/dashboards/app-dashboard.json" | indent 6 }}
-    chaos-impact.json: |-
-{{- printf "%s" .Files.Get "grafana/dashboards/chaos-impact.json" | indent 6 }}
+service:
+  type: LoadBalancer
 
-# Dashboard providers
-dashboardProviders:
-  dashboardproviders.yaml:
+datasources:
+  datasources.yaml:
     apiVersion: 1
-    providers:
-      - name: 'default'
-        orgId: 1
-        folder: ''
-        type: file
-        disableDeletion: false
-        options:
-          path: /var/lib/grafana/dashboards/default
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        uid: prometheus
+        access: proxy
+        url: http://prometheus-server.monitoring.svc.cluster.local
+        isDefault: true
+        editable: false
+        jsonData:
+          timeInterval: "5s"
 
-# Sidecar provisioning for datasources (if using grafana chart with sidecar)
+grafana.ini:
+  auth.anonymous:
+    enabled: false
+  auth:
+    disable_login_form: false
+    disable_signout_menu: false
+  feature_toggles:
+    enable:
+      - api_keys
+  security:
+    admin_user: admin
+    # DO NOT define admin_password here anymore
+  panels:
+    disable_sanitize_html: false
+
+persistence:
+  enabled: false
+
+dashboards: {}
+dashboardProviders: {}
+
 sidecar:
   dashboards:
-    enabled: true
-    label: grafana_dashboard
-    folder: /var/lib/grafana/dashboards/default
+    enabled: false
   datasources:
-    enabled: true
-    label: grafana_datasource
+    enabled: false
 
-# If chart requires datasources configMap
 extraConfigmapMounts: []
