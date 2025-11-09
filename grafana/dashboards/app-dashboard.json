@@ -1,0 +1,74 @@
+{
+    "id": null,
+    "uid": "app-dashboard",
+    "title": "App Overview - devops",
+    "tags": ["app", "devops"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "type": "timeseries",
+        "title": "Requests per second",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "targets": [
+          {
+            "expr": "sum(irate(http_requests_total{kubernetes_namespace=\"default\"}[2m])) or sum(rate(http_requests_total[5m]))",
+            "legendFormat": "Requests/s",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x":0,"y":0,"w":12,"h":6}
+      },
+      {
+        "type": "timeseries",
+        "title": "p95 latency (s)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{kubernetes_namespace=\"default\"}[5m])) by (le))",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x":12,"y":0,"w":12,"h":6}
+      },
+      {
+        "type": "timeseries",
+        "title": "Error rate (5xx) %",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "targets": [
+          {
+            "expr": "(100 * sum(irate(http_requests_total{kubernetes_namespace=\"default\",code=~\"5..\"}[2m])) / sum(irate(http_requests_total{kubernetes_namespace=\"default\"}[2m]))) or on() vector(0)",
+            "legendFormat": "Error rate %",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x":0,"y":6,"w":12,"h":6}
+      },
+      {
+        "type": "timeseries",
+        "title": "Pod CPU Usage (cores)",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "targets": [
+          {
+            "expr": "sum(rate(container_cpu_usage_seconds_total{pod=~\"devops.*\"}[5m])) by (pod)",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x":12,"y":6,"w":12,"h":6}
+      }
+    ],
+    "schemaVersion": 16,
+    "version": 0
+  }
+  

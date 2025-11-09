@@ -1,0 +1,48 @@
+adminUser: admin
+adminPassword: admin
+
+service:
+  type: LoadBalancer
+
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        uid: prometheus
+        access: proxy
+        url: http://prometheus-server.monitoring.svc.cluster.local
+        isDefault: true
+        editable: false
+        jsonData:
+          timeInterval: "5s"
+
+grafana.ini:
+  auth.anonymous:
+    enabled: false
+  auth:
+    disable_login_form: false
+    disable_signout_menu: false
+  feature_toggles:
+    enable:
+      - api_keys
+  security:
+    admin_user: admin
+    # DO NOT define admin_password here anymore
+  panels:
+    disable_sanitize_html: false
+
+persistence:
+  enabled: false
+
+dashboards: {}
+dashboardProviders: {}
+
+sidecar:
+  dashboards:
+    enabled: false
+  datasources:
+    enabled: false
+
+extraConfigmapMounts: []

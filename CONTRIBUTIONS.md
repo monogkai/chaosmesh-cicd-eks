@@ -19,3 +19,6 @@
     - Update workflow
 6. Convert chaos step to access multiple experiments
     - Add cpu stress experiment
+7. Generate the first Grafana graphics
+    - Use Prometheus to obtain the data
+    - Separate clean up job from the remaining workflow
